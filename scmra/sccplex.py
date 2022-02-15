@@ -1,5 +1,6 @@
 """Classes and functions to generate cplex.Cplex for sc-MRA problem."""
 
+from cmath import isnan
 import cplex
 import numpy as np
 import pandas as pd
@@ -419,6 +420,7 @@ class ScCnrProblem(ScData):
         self._theta = theta
         if alpha == 'automatic':
             self._alpha = estimate_alpha(scdata)
+            print("estimated alpha is: " + str(self._alpha))
         else:
             assert 0 < alpha <= 1, \
             """alpha should be `automatic` or in (0, 1]"""
@@ -991,6 +993,11 @@ def estimate_alpha(scdata):
     # Return average of both
     alpha = (ub + lb)/2
     print("Estimated alpha: " + str(alpha))
+
+    if(isnan(alpha)):
+        print("alpha is nan, set to 1")
+        return 1.
+
     return alpha
 
 

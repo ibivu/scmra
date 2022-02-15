@@ -358,9 +358,11 @@ def _get_stot_from_scp(scp, vardict, group=None, solidx=0):
         stot = np.array(scp.stot_symbols[group])
     else:
         stot = np.array(scp.stot_symbols)
-    for s in np.nditer(stot, flags=["refs_ok"],  op_flags=["readwrite"]):
-        if str(s) in scp._s_vars:
-            s[...] = vardict[str(s)]
+
+    if(stot.size != 0):
+        for s in np.nditer(stot, flags=["refs_ok"],  op_flags=["readwrite"]):
+            if str(s) in scp._s_vars:
+                s[...] = vardict[str(s)]
 
     df = pd.DataFrame(stot,
                       index=scp.nodes_complete, columns=scp.nodes_complete
