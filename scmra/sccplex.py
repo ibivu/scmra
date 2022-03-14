@@ -949,7 +949,7 @@ def generate_pert_symbols(nodes, cells, cell_annot_inv, tx_annot, prefix=None):
 
     columns : list of cells
 
-    cell_annot: dict mapping cells to treatments
+    cell_annot_inv: dict mapping cells to treatments
 
     tx_annot: dict mapping treatments to perturbed nodes
 
