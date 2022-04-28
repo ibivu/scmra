@@ -76,7 +76,8 @@ class ScMraProblem(ScData):
             eta=0.0,
             alpha='automatic',
             prior_network=None,
-            mode=None):
+            mode=None,
+            maxNodes=None):
         """Initialization from ScData object."""
         # From input
         super().__init__(scdata.rglob, scdata.rtot,
@@ -100,6 +101,7 @@ class ScMraProblem(ScData):
                 assert (m in scdata.nodes), \
                     "invalid node " + n + " in prior_network"
         self._prior_network = prior_network
+        self._maxNodes = maxNodes
 
         self._r_bounds = r_bounds if r_bounds is not None else bounds
         self._s_bounds = s_bounds if s_bounds is not None else bounds
@@ -395,6 +397,13 @@ class ScMraProblem(ScData):
                 name=name
             )
 
+        # set the maximum number of nodes if present
+        if self._maxNodes:
+            constr = cplex.SparsePair(self._indicators,
+                     [1] * len(self._indicators))
+            self.cpx.linear_constraints.add(lin_expr = [constr],
+                                            rhs = [self._maxNodes], senses = ["E"],
+                                            names = ["max_interactions"])
 
 class ScCnrProblem(ScData):
     """Class to generate sc-CNR problem and associated cplex.Cplex object."""
