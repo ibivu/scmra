@@ -77,7 +77,11 @@ class ScMraProblem(ScData):
             alpha='automatic',
             prior_network=None,
             mode=None,
-            maxNodes=None):
+            maxNodes=None,
+            noBidirectionality=False,
+            modelPertRloc = False,
+            modelOnlyPertNodeDiff = False,
+            modelPertStot = False):
         """Initialization from ScData object."""
         # From input
         super().__init__(scdata.rglob, scdata.rtot,
@@ -102,6 +106,12 @@ class ScMraProblem(ScData):
                     "invalid node " + n + " in prior_network"
         self._prior_network = prior_network
         self._maxNodes = maxNodes
+        self._noBidirectionality = noBidirectionality
+
+        self._modelPertRloc = modelPertRloc
+        self._modelPertNode = modelOnlyPertNodeDiff
+        self._modelPertStot = modelPertStot
+        assert not (self._modelPertRloc and self._modelPertNode), "ether all edges or ONLY the perturbed node can be modelled seperately!!!"
 
         self._r_bounds = r_bounds if r_bounds is not None else bounds
         self._s_bounds = s_bounds if s_bounds is not None else bounds
@@ -120,8 +130,15 @@ class ScMraProblem(ScData):
         self._indicators = _generate_indicators(
             self.nodes, self._prior_network)
 
+        if(self.tx_annot is not None):
+            self._pertIndicators = flatten_list([_generate_indicators(self.nodes, self._prior_network, "InhI_" + tx)\
+                for tx, node in self.tx_annot.items() if node is not None])
+
         self._s_vars = ["s_"+node for node in self.nodes_complete]
         
+        if self.tx_annot is not None:
+            self._perturbed_s_vars = generate_inh_stot_symbols(self.tx_annot, self.nodes_complete)
+
         if self.tx_annot is not None:
             self._p_vars = [
                 "_".join(["p", tx, node]) for tx, node in self.tx_annot.items()
@@ -146,6 +163,16 @@ class ScMraProblem(ScData):
     def stot_symbols(self):
         """return sympy.Matrix with s matrix. Elements are sympy.Symbols"""
         return sympy.Matrix(np.diag(sympy.symbols(self._s_vars)))
+
+    @property
+    def perturbed_stot_symbols(self):
+        """return sympy.Matrix with s matrix. Elements are sympy.Symbols"""
+        #dictionary of stot values for each perturbation
+        stot_symbols = {}
+        for tx, node in self.tx_annot.items():
+            if node is None: continue
+            stot_symbols[tx] = sympy.Matrix(np.diag(sympy.symbols(self._perturbed_s_vars[tx])))
+        return stot_symbols
 
     @property
     def residuals_symbols(self):
@@ -255,7 +282,6 @@ class ScMraProblem(ScData):
             lb=[-1*self._ei_bounds] * n_ei,
             ub=[self._ei_bounds] * n_ei
         )
-
         # Add indicator constraint on presence/absence of edges as variables
         n_i = len(self._indicators)
         self.cpx.variables.add(
@@ -266,10 +292,45 @@ class ScMraProblem(ScData):
             obj=[self._eta] * n_i
         )
 
+        # Add rloc for ingoing edges of inhibited node
+        #get new rloc_vars for every perturbed node: 'INH_<tx>_<rloc>'
+        if( (self.tx_annot is not None) and (self._modelPertRloc or self._modelPertNode)):
+            prefix = ["INH_" + tx for tx, node in self.tx_annot.items() if node is not None]
+            self._rloc_i_vars = ['_'.join(i) for i in itertools.product(prefix, self._rloc_vars)]
+            n_names = len(self._rloc_i_vars)
+            self.cpx.variables.add(
+                names=self._rloc_i_vars,
+                types=[self.cpx.variables.type.continuous] * n_names,
+                lb=[-1*self._r_bounds] * n_names,
+                ub=[self._r_bounds] * n_names
+            )
+
+        #add indicators perturbed edges
+        if( (self.tx_annot is not None) and (self._modelPertRloc or self._modelPertNode)):
+            n_i = len(self._pertIndicators)
+            self.cpx.variables.add(
+                names=self._pertIndicators,
+                types=[self.cpx.variables.type.binary] * n_i,
+                lb=[0] * n_i,
+                ub=[1] * n_i
+            )
+
+        # Add sensitivities of complete nodes as variables for perturbed subpopulations of cells
+        if( (self.tx_annot is not None) and (self._modelPertStot)):
+            stot_names = flatten_list(list(self._perturbed_s_vars.values()))
+            n_s = len(stot_names)
+            self.cpx.variables.add(
+                names=stot_names,
+                types=[self.cpx.variables.type.continuous] * n_s,
+                lb=[0.] * n_s,  # protein, phospho-protein assumed to be positively
+                ub=[self._s_bounds] * n_s
+            )
+
     def _cpx_mra_eqns(self):
         lin_exprs = []
         # Iterate over all MRA equations
 
+        # ---------------------------------------------------------------------
         # The MRA equations for complete nodes (protein + phospho measured)
         # Temp helper objects to prevent recreating these too often
         tmp_rloc_complete = generate_rloc_symbols(
@@ -280,15 +341,29 @@ class ScMraProblem(ScData):
                 self.nodes_complete, self.cells, 
                 self.cell_annot_inv, self.tx_annot
             )
+            tmp_inh_rloc_complete_dict = generate_inh_rloc_symbols(
+                self.nodes_complete, self.nodes, self._prior_network, self.tx_annot)
+            tmp_stot_perturbed = self.perturbed_stot_symbols
+
         tmp_res_complete = self.residuals_complete_symbols
 
         # Iterate over all complete node and each cell
         for node_idx in range(len(self.nodes_complete)):
             for cell_idx in range(len(self.cells)):
-
-                # The contribution of other nodes
-                var = [str(r) for r in tmp_rloc_complete[node_idx, :]]
-                coef = list(np.array(self.rglob)[:, cell_idx])
+                tx = None
+                if( (self.tx_annot is not None) and (self._modelPertRloc or self._modelPertNode) ):
+                    tx = self.cell_annot_inv[self.cells[cell_idx]]
+                    pertNode = self.tx_annot[tx]
+                    if( (tx != "ctr") and (self._modelPertRloc or (pertNode == self.nodes_complete[node_idx]))):
+                        tmp_inh_rloc = tmp_inh_rloc_complete_dict[tx]
+                        var = [str(r) for r in tmp_inh_rloc[node_idx, :]]
+                    else:
+                        # The contribution of other nodes
+                        var = [str(r) for r in tmp_rloc_complete[node_idx, :]]
+                    coef = list(np.array(self.rglob)[:, cell_idx])
+                else:
+                    var = [str(r) for r in tmp_rloc_complete[node_idx, :]]
+                    coef = list(np.array(self.rglob)[:, cell_idx])
 
                 # Remove absent interactions
                 indices = [i for i, x in enumerate(var) if x == '0']
@@ -296,12 +371,20 @@ class ScMraProblem(ScData):
                 coef = [i for j, i in enumerate(coef) if j not in indices]
 
                 # Contribution of deviations in total protein
-                var.append(str(tmp_stot[node_idx, node_idx]))
-                coef.append(np.array(self.rtot)[node_idx, cell_idx])
+                if((self.tx_annot is not None) and (self._modelPertStot)\
+                    and tx is not None and (tx != "ctr")):
+                    tx_stot_perturbed = tmp_stot_perturbed[tx]
+                    var.append(str(tx_stot_perturbed[node_idx, node_idx]))
+                    coef.append(np.array(self.rtot)[node_idx, cell_idx])
+                else:
+                    var.append(str(tmp_stot[node_idx, node_idx]))
+                    coef.append(np.array(self.rtot)[node_idx, cell_idx])
 
-                # Contribution of perturbation (if perturbations were done)
+                # Contribution of perturbation (if perturbations were done and
+                # if we do not model them as seperate rloc values)
                 if self.tx_annot is not None and\
-                        tmp_pert_complete[node_idx, cell_idx] != 0:
+                        tmp_pert_complete[node_idx, cell_idx] != 0:# and\
+                        #not (self._modelPertRloc or self._modelPertNode):
                     pvar = tmp_pert_complete[node_idx, cell_idx]
                     assert pvar in self._p_vars
                     var.append(pvar)
@@ -311,8 +394,9 @@ class ScMraProblem(ScData):
                 var.append(str(tmp_res_complete[node_idx, cell_idx]))
                 coef.append(1.)
 
-                lin_exprs.append([var, coef])  # Add constraint to linexps
+                lin_exprs.append([var, coef])  # Add constraint to linexps                
 
+        # ---------------------------------------------------------------------
         # The MRA equations for incomplete nodes (only phospho measured)
         # Temp helper objects
         tmp_rloc_incomplete = generate_rloc_symbols(
@@ -322,14 +406,27 @@ class ScMraProblem(ScData):
                 self.nodes_incomplete, self.cells, 
                 self.cell_annot_inv, self.tx_annot
             )
+            tmp_inh_rloc_incomplete_dict = generate_inh_rloc_symbols(
+                self.nodes_incomplete, self.nodes, self._prior_network, self.tx_annot)
+
         tmp_res_incomplete = self.residuals_incomplete_symbols
         # Iterate over all incomplete nodes in each cell
         for node_idx in range(len(self.nodes_incomplete)):
             for cell_idx in range(len(self.cells)):
 
-                # The contribution of other nodes
-                var = [str(r) for r in tmp_rloc_incomplete[node_idx, :]]
-                coef = list(np.array(self.rglob)[:, cell_idx])
+                if( (self.tx_annot is not None) and (self._modelPertRloc or self._modelPertNode)):
+                    tx = self.cell_annot_inv[self.cells[cell_idx]]
+                    pertNode = self.tx_annot[tx]
+                    if( (tx != "ctr") and (self._modelPertRloc or (pertNode == self.nodes_complete[node_idx]))):
+                        tmp_inh_rloc = tmp_inh_rloc_incomplete_dict[tx]
+                        var = [str(r) for r in tmp_inh_rloc[node_idx, :]]
+                    else:
+                        # The contribution of other nodes
+                        var = [str(r) for r in tmp_rloc_incomplete[node_idx, :]]
+                    coef = list(np.array(self.rglob)[:, cell_idx])
+                else:
+                    var = [str(r) for r in tmp_rloc_incomplete[node_idx, :]]
+                    coef = list(np.array(self.rglob)[:, cell_idx])
 
                 # Remove absent interactions
                 indices = [i for i, x in enumerate(var) if x == '0']
@@ -338,7 +435,8 @@ class ScMraProblem(ScData):
 
                 # Contribution of perturbation if annotations are present
                 if self.tx_annot is not None and\
-                        tmp_pert_incomplete[node_idx, cell_idx] != 0:
+                        tmp_pert_incomplete[node_idx, cell_idx] != 0 and\
+                        not (self._modelPertRloc or self._modelPertNode):
                     pvar = tmp_pert_incomplete[node_idx, cell_idx]
                     assert pvar in self._p_vars
                     var.append(pvar)
@@ -350,6 +448,7 @@ class ScMraProblem(ScData):
 
                 lin_exprs.append([var, coef])  # Add constraint to linexps
 
+        # ---------------------------------------------------------------------
         # Add all MRA equations to the Cplex object
         self.cpx.linear_constraints.add(
             lin_expr=lin_exprs,
@@ -396,6 +495,98 @@ class ScMraProblem(ScData):
                 lin_expr=constr,
                 name=name
             )
+
+        # -------------------------------------------------------------------
+        # Construct indicator constraints for presence of edge for perturbed rloc
+        if( (self.tx_annot is not None) and (self._modelPertRloc or self._modelPertNode)):
+            for rvar in self._rloc_i_vars:
+                # rvar is expected to have form r_nodei_nodej
+                r_elements = rvar.split('_')
+                assert len(r_elements) == 5 # INH_<tx>_r_<i>_<j>
+                assert r_elements[0] == 'INH'
+                assert r_elements[1] in self.tx_annot
+                assert r_elements[2] == 'r'
+                assert r_elements[3] in self.nodes and r_elements[4] in self.nodes
+                ivar = '_'.join(["InhI", r_elements[1], r_elements[3], r_elements[4]])
+                assert ivar in self._pertIndicators
+                name = '_'.join(["IndI", r_elements[1], r_elements[3], r_elements[4]])
+                constr = cplex.SparsePair(ind=[rvar], val=[1.])
+                self.cpx.indicator_constraints.add(
+                    indvar=ivar,
+                    complemented=1,
+                    rhs=0., sense='E',
+                    lin_expr=constr,
+                    name=name
+                )
+
+        # -------------------------------------------------------------------
+        #constraints that rloc and perturbed rloc have to be set together
+        # rloc_i_j <-> rlocI_i_j (linear expression in form: I(rloc) - I(perturbed rloc) == 0)
+        if( (self.tx_annot is not None) and (self._modelPertRloc or self._modelPertNode)):
+            #for every perturbation (and its own rloc matrix)
+            lin_exprs = []
+            for tx, node in self._tx_annot.items():
+                if node is None: continue
+                for rvar in self._rloc_vars:
+                    r_elements = rvar.split('_')
+                    ivarRloc = '_'.join(["I", r_elements[1], r_elements[2]]) #the indicators of control rloc values
+                    ivarPertRloc = '_'.join(["InhI", tx, r_elements[1], r_elements[2]]) #the indicators of perturbed rloc values
+                    
+                    #we do this only for the edges towards a perturbed node in case we 
+                    #model a different rloc only for the perturbed node
+                    if(self._modelPertNode and r_elements[1] != self.tx_annot[tx]):
+                        continue
+                    
+                    var = []
+                    coeff = []
+                    var.append(ivarRloc)
+                    var.append(ivarPertRloc)
+                    coeff.append(1.0)
+                    coeff.append(-1.0)
+                    lin_exprs.append([var, coeff])  # Add constraint to linexps
+            self.cpx.linear_constraints.add(
+                lin_expr=lin_exprs,
+                senses=["E"] * len(lin_exprs), 
+                rhs=[0.] * len(lin_exprs)
+            )
+
+
+        # -------------------------------------------------------------------
+        #add logical constraints for single directionality
+        #for combination of nodes_ rloc_i_j - rloc_j_i == 0
+        if(self._noBidirectionality):
+            lin_exprs = []
+            tmp_rloc = generate_rloc_symbols(
+                self.nodes, self.nodes, self._prior_network)
+            for node_idx_i in range(len(self.nodes)):
+                #skip the same node (node)_idx_i PLUS 1)
+                for node_idx_j in range(node_idx_i+1, len(self.nodes)):
+                    # the rloc value of this pair in both directions
+                    var = []
+                    coeff = []
+
+                    direction1 = "_".join(["I", self.nodes[node_idx_i], self.nodes[node_idx_j]])
+                    direction2 = "_".join(["I", self.nodes[node_idx_j], self.nodes[node_idx_i]])
+
+                    var.append(direction1)
+                    var.append(direction2)
+
+                    coeff.append(1.0)
+                    coeff.append(1.0)
+
+                    lin_exprs.append([var, coeff])  # Add constraint to linexps
+
+            # Add all logical constraints to the Cplex object
+            #A+B <= 1
+            self.cpx.linear_constraints.add(
+                lin_expr=lin_exprs,
+                senses=["L"] * len(lin_exprs), 
+                rhs=[1.] * len(lin_exprs)
+            )
+
+        #constraint to set all inhibitory effects for a ndoe to zero, if there is a zero edge
+        #if(self._modelPertRloc):
+            #if indicator constraint of r_i_j is zeo, INH should also be zero for that edge
 
         # set the maximum number of nodes if present
         if self._maxNodes:
@@ -912,7 +1103,14 @@ def _generate_indicators(nodes, prior_network, base='I'):
                    itertools.product(nodes, nodes) if node_i != node_j]
     return ind_lst
 
-
+def generate_inh_stot_symbols(tx_annot, nodes_complete):
+    inh_stot = {}
+    for tx, node in tx_annot.items():
+        if node is None: continue
+        stot_values_per_tx = ["Inhs_"+ tx + "_" + node for node in nodes_complete]
+        inh_stot[tx] = stot_values_per_tx
+    return(inh_stot)
+    
 def generate_rloc_symbols(rows, columns, prior_network, prefix=None):
     """"Generate matrix containing local response coefficients as symbols.
 
@@ -947,6 +1145,50 @@ def generate_rloc_symbols(rows, columns, prior_network, prefix=None):
                 mat[i][j] = sympy.Symbol(BASE + rows[i] + '_' + columns[j])
     return mat
 
+def generate_inh_rloc_symbols(rows, columns, prior_network, tx_annot, prefix=None):
+    """"Generate a dict for each matrix containing local response coefficients 
+        for cell with perturbation as symbols.
+
+    Parameters
+    ----------
+    rows: list of nodes. This can be all nodes to get complete rloc, or
+    (in)complete nodes to get submatrix
+
+    nodes : tuple of strings
+
+    prior_network : list of 2-tuples, optional
+
+    Returns
+    -------
+    MxN np.array with dtype=sympy.Symbol with as ij-th elements r_nodei_nodej
+    and on the diagonal: r_i_i
+    """
+
+    pertRlocDict = {}
+    if(tx_annot is not None):
+        for tx, node in tx_annot.items():
+
+            if node is None: continue
+
+            ncn = len(rows)  # rows of rloc (i.e. "downstream" nodes)
+            nn = len(columns)  # columns of rloc (i.e. upstream and thus all nodes)
+            mat = np.zeros((ncn, nn), dtype=sympy.Symbol)
+            BASE = "INH_" + str(tx) + "_r_"
+            if prefix:
+                assert isinstance(prefix, str)
+                BASE = BASE + prefix + "_"
+
+            for i in range(ncn):
+                for j in range(nn):
+                    edge = (rows[i], columns[j])
+                    if rows[i] == columns[j]:
+                        mat[i][j] = sympy.Symbol('r_i_i')
+                    elif (prior_network is None) or (edge in prior_network):
+                        mat[i][j] = sympy.Symbol(BASE + rows[i] + '_' + columns[j])
+
+            pertRlocDict[tx] = mat
+    
+    return pertRlocDict
 
 def generate_pert_symbols(nodes, cells, cell_annot_inv, tx_annot, prefix=None):
     """"Generate matrix containing local response coefficients as symbols.
@@ -1054,3 +1296,15 @@ def set_interactions_status(scproblem, interaction_list, status):
         assert indicator in scproblem.indicators, indicator + "not in list."
         # print("setting indicator " + indicator + " to " + str(status))
         set_indicator_status(scproblem.cpx, indicator, status)
+
+def flatten_list(_2d_list):
+    flat_list = []
+    # Iterate through the outer list
+    for element in _2d_list:
+        if type(element) is list:
+            # If the element is of type list, iterate through the sublist
+            for item in element:
+                flat_list.append(item)
+        else:
+            flat_list.append(element)
+    return flat_list

@@ -46,6 +46,10 @@ class ScMraResult(ScData):
         self.hyperparameters = {
             "alpha": scproblem._alpha,
             "eta": scproblem._eta}
+        self.annotation = _get_tx_annot_from_scp(scproblem)
+
+        #'new' rloc_i (dict with key=treatment and values=rloc values) of inhibition which is inhibition coef = 1-(rloc_i/rloc)
+        self.rloc_i = _get_rloc_i_from_scp(scproblem)
 
     @property
     def n_edges(self):
@@ -323,6 +327,47 @@ def _get_rloc_from_scp(scp, prefix=None, solidx=0):
     return df
 
 
+def _get_rloc_i_from_scp(scp, prefix=None, solidx=0):
+
+    pertubRlocDict = {}
+    if( (scp.tx_annot is not None) and (scp._modelPertRloc or scp._modelPertNode)):
+        for tx,node in scp.tx_annot.items():
+
+            if(tx == 'ctr'): continue
+            base = "INH_" + str(tx)
+            if prefix:
+                assert isinstance(prefix, str)
+                base = "_".join([base, prefix])
+            assert scp.cpx.solution.is_primal_feasible()
+            assert solidx < scp.cpx.solution.pool.get_num()
+
+            allvars = scp.cpx.variables.get_names()
+            vars_lst = [var for var in allvars if var.startswith(base + '_')]
+
+            vars_vals = scp.cpx.solution.pool.get_values(solidx, vars_lst)
+            vars_dict = dict(zip(vars_lst, vars_vals))
+
+            if 'r_i_i' in vars_dict.keys():
+                del vars_dict['r_i_i']
+
+            mat = -1. * np.identity(len(scp.nodes))
+
+            reg_sp = re.compile(
+                '(' + '|'.join(scp.nodes) + ')_(' + '|'.join(scp.nodes) + ')$')
+            for key, value in vars_dict.items():
+                sps = re.findall(reg_sp, key)
+                assert len(sps) == 1, key + " has unexpected form"
+                sps = sps[0]
+                assert len(sps) == 2, key + " has unexpected form"
+                mat[scp.nodes.index(sps[0])][scp.nodes.index(sps[1])] = value
+
+            df = pd.DataFrame(mat)
+            df.index = scp.nodes
+            df.columns = scp.nodes
+
+            pertubRlocDict[tx] = df
+    return(pertubRlocDict)
+
 def _get_residuals_from_scp(scp, vardict, which_nodes='all', 
                             prefix=None, solidx=0):
     """Return data-frame containing residuals of nodes with both phospho and
@@ -368,3 +413,6 @@ def _get_stot_from_scp(scp, vardict, group=None, solidx=0):
                       index=scp.nodes_complete, columns=scp.nodes_complete
                       )
     return df
+
+def _get_tx_annot_from_scp(scp):
+    return scp.tx_annot
