@@ -27,6 +27,12 @@ even in the absence of perturbations. To improve network reconstruction the opti
   python3 setup.py install
 ```
 
+- Test
+```bash
+  make test_scMRA
+  make test_scCNR
+```
+
 ## Tutorial
 
 [1. Running scMRA to reconstruct a model network of the MAPK pathway](https://github.com/ibivu/scmra/blob/main/docs/scMRA_Tutorial.html)
