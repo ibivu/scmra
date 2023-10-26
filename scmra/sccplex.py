@@ -1,5 +1,6 @@
 """Classes and functions to generate cplex.Cplex for sc-MRA problem."""
 
+from cmath import isnan
 import cplex
 import numpy as np
 import pandas as pd
@@ -450,6 +451,11 @@ class ScCnrProblem(ScData):
                 itertools.product(self.groups, self.nodes, self.nodes) if
                 (node_i != node_j)
             ]
+        else:
+            self._rloc_vars= [
+                    "_".join(["r", group, edge[0], edge[1]]) for group, edge in
+                    itertools.product(self.groups, self._prior_network)
+                ]
         self._dev_vars = ["dev_" + r for r in self._rloc_vars]
 
         self._indicators = _generate_indicators(
@@ -991,6 +997,12 @@ def estimate_alpha(scdata):
     # Return average of both
     alpha = (ub + lb)/2
     print("Estimated alpha: " + str(alpha))
+
+    #in rare scenarios where alpha="automatic", and ONLY complete/ incomplete nodes
+    if(isnan(alpha)):
+        print("alpha is nan, set to 1")
+        return 1.
+
     return alpha
 
 
