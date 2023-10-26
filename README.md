@@ -9,7 +9,7 @@ The repository includes two methods:
    
 ## Method
 
-![Method](https://github.com/ibivu/scmra/blob/main/docs/scCNR_scheme.png)
+![Method](https://github.com/ibivu/scmra/blob/main/docs/scCNR_Overview.png)
 
 ScMRA/ scCNR are methods to infer signalling networks from single-cell data of active (e.g. phospho) and total protein abundances. 
 The methods exploits the stochastic variability between single cells to identify edges in the interaction network. 
