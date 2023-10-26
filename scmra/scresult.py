@@ -46,6 +46,7 @@ class ScMraResult(ScData):
         self.hyperparameters = {
             "alpha": scproblem._alpha,
             "eta": scproblem._eta}
+        self.annotation = _get_tx_annot_from_scp(scproblem)
 
     @property
     def n_edges(self):
@@ -137,7 +138,7 @@ class ScCnrResult(ScData):
         self.vardict = _get_vardict_from_cpx(scproblem.cpx, solidx=0)
         self.imap = _get_imap_from_scp(scproblem)
         self.rloc = {
-            group: _get_rloc_from_scp(scproblem) for group in scproblem.groups
+            group: _get_rloc_from_scp(scproblem, prefix=group) for group in scproblem.groups
         }
         self.stot = {
             group: _get_stot_from_scp(scproblem, self.vardict, group)
@@ -269,7 +270,6 @@ def _get_imap_from_scp(scp, solidx=0):
 
     return df
 
-
 def _get_rloc_from_scp(scp, prefix=None, solidx=0):
     """Construct local response matrix from cplex solution.
 
@@ -358,11 +358,16 @@ def _get_stot_from_scp(scp, vardict, group=None, solidx=0):
         stot = np.array(scp.stot_symbols[group])
     else:
         stot = np.array(scp.stot_symbols)
-    for s in np.nditer(stot, flags=["refs_ok"],  op_flags=["readwrite"]):
-        if str(s) in scp._s_vars:
-            s[...] = vardict[str(s)]
+    #if stot exists (total protein must be present)
+    if(stot.size != 0):
+        for s in np.nditer(stot, flags=["refs_ok"],  op_flags=["readwrite"]):
+            if str(s) in scp._s_vars:
+                s[...] = vardict[str(s)]
 
     df = pd.DataFrame(stot,
                       index=scp.nodes_complete, columns=scp.nodes_complete
                       )
     return df
+
+def _get_tx_annot_from_scp(scp):
+    return scp.tx_annot
