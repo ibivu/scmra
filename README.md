@@ -1,4 +1,5 @@
 # Single Cell Network Reconstruction
+[![LINUX BUILD (22.04)](https://github.com/ibivu/scmra/actions/workflows/python-app.yml/badge.svg)](https://github.com/ibivu/scmra/actions/workflows/python-app.yml)
 
 This repository contains a python module for single cell network reconstruction based on Modular Response Analysis and Comparative Network Reconstruction.
 The repository includes two methods:
