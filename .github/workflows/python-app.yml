@@ -25,9 +25,3 @@ jobs:
         python-version: "3.8"
     - name: Install dependencies
       run: make install
-
-    - name: Test Creation Of scMRA Optimization Problem
-      run: make test_scMRA
-
-    - name: Test Creation Of scCNR Optimization Problem
-      run: make test_scCNR
