@@ -35,6 +35,6 @@ even in the absence of perturbations. To improve network reconstruction the opti
 
 ## Tutorial
 
-[1. Running scMRA to reconstruct a model network of the MAPK pathway](http://htmlpreview.github.io/?https://github.com/ibivu/scmra/blob/main/docs/scMRA_Tutorial.html)
+[1. Running scMRA to reconstruct a model network of the MAPK pathway](https://htmlpreview.github.io/?http://htmlpreview.github.io/?https://github.com/ibivu/scmra/blob/main/docs/scMRA_Tutorial.html)
 
 [2. Running scCNR to comparatively reconstruct differences in the pathway between the wild type and a BRAF mutant population](http://htmlpreview.github.io/?https://github.com/ibivu/scmra/blob/main/docs/scCNR_Tutorial.html)
