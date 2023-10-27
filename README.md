@@ -19,7 +19,7 @@ even in the absence of perturbations. To improve network reconstruction the opti
 
 ## Installation:
 
-- To solve the optimization problem we use IBM ILOG CPLEX solver, which is freely available for academic purposes:
+- To solve the optimization problem we use the IBM ILOG CPLEX solver, which is freely available for academic purposes:
 [IBM CPLEX DOWNLOAD](https://www.ibm.com/support/pages/downloading-ibm-ilog-cplex-optimization-studio-2010)
 
 - Install our python module
