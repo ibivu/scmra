@@ -164,3 +164,12 @@ class ScData:
     def groups(self):
         """Get treatment/cell state groups. Tuple of strings."""
         return list(self.group_annot.keys())
+
+""" generate rglob, rtot from count matrix of the form: <single-cell> x <protein> """
+def prepare_data(data):
+
+    #scale by difference to ctr group
+    dat_scaled = ((data - data.median())/data.median()).transpose()
+
+    return dat_scaled
+    
