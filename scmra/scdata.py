@@ -1,5 +1,6 @@
-"""Classes to hold input data and problem description for single cell MRA."""
+import pandas as pd
 
+"""Classes to hold input data and problem description for single cell MRA."""
 
 class ScData:
     """" Class to contain data from a perturbation experiment.
@@ -165,11 +166,30 @@ class ScData:
         """Get treatment/cell state groups. Tuple of strings."""
         return list(self.group_annot.keys())
 
-""" generate rglob, rtot from count matrix of the form: <single-cell> x <protein> """
-def prepare_data(data):
+""" generate rglob, rtot from count matrix of the form: <single-cell> x <protein> 
+    Parameters
+    ----------
+    dataCtr: control population, all cells are scaled to the mean of this poplation
+
+    dataList: list of additional cell populations. They will be scaled to dataCtr
+
+    groupList = list of group labels for additional populations, dataCtr gets the 'Ctr' label
+"""
+def prepare_data(dataCtr, dataList = None, groupList = None):
+
+    #scale control cells
+    groupAnnot = {}
+    dataScaledCtr = ((dataCtr - dataCtr.median())/dataCtr.median()).transpose()
+    groupAnnot["Ctr"] = list(dataScaledCtr.columns)
 
     #scale by difference to ctr group
-    dat_scaled = ((data - data.median())/data.median()).transpose()
+    dataScaledAdd = [dataScaledCtr]
+    for i in range(len(dataList)):
+        dataScaledTmp = ((dataList[i] - dataList[i].median())/dataList[i].median()).transpose()
+        dataScaledAdd.append(dataScaledTmp)
+        groupAnnot[groupList[i]] = list(dataScaledTmp.columns)
 
-    return dat_scaled
+    dataScaled = pd.concat(dataScaledAdd, axis=1)
+
+    return (dataScaled, groupAnnot)
     
