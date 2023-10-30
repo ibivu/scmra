@@ -169,25 +169,18 @@ class ScData:
 """ generate rglob, rtot from count matrix of the form: <single-cell> x <protein> 
     Parameters
     ----------
-    dataCtr: control population, all cells are scaled to the mean of this poplation
-
-    dataList: list of additional cell populations. They will be scaled to dataCtr
-
-    groupList = list of group labels for additional populations, dataCtr gets the 'Ctr' label
+    populations: list of cell populations
+    labels = list of group labels for populations
 """
-def prepare_data(dataCtr, dataList = None, groupList = None):
+def prepare_data(populations, labels):
 
-    #scale control cells
+    #scale to populations mean
+    dataScaledAdd = []
     groupAnnot = {}
-    dataScaledCtr = ((dataCtr - dataCtr.median())/dataCtr.median()).transpose()
-    groupAnnot["Ctr"] = list(dataScaledCtr.columns)
-
-    #scale by difference to ctr group
-    dataScaledAdd = [dataScaledCtr]
-    for i in range(len(dataList)):
-        dataScaledTmp = ((dataList[i] - dataList[i].median())/dataList[i].median()).transpose()
+    for i in range(len(populations)):
+        dataScaledTmp = ((populations[i] - populations[i].median())/populations[i].median()).transpose()
         dataScaledAdd.append(dataScaledTmp)
-        groupAnnot[groupList[i]] = list(dataScaledTmp.columns)
+        groupAnnot[labels[i]] = list(dataScaledTmp.columns)
 
     dataScaled = pd.concat(dataScaledAdd, axis=1)
 
