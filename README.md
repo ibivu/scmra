@@ -7,7 +7,10 @@ The repository includes two methods:
   - **scMRA**: reconstructs one signaling network from single cell (phospho)-protein count data
   - **scCNR**: builds on scMRA for comparative network reconstruction of a set of cell populations (e.g., cell states).
                ScCNR reconstructs one shared signaling network with population-specific interaction strengths
-   
+
+If you use these methods, pleace cite:
+T. Stohn, R. van Eijl, K.W. Mulder, L.F.A. Wessels, and E. Bosdriesz, “Reconstructing and Comparing Signal Transduction Networks from Single Cell Protein Quantification Data.” bioRxiv. doi:[10.1101/2024.03.29.587331](https://doi.org/10.1101/2024.03.29.587331), 2024.   
+
 ## Method
 
 ![Method](https://github.com/ibivu/scmra/blob/main/docs/scCNR_Overview.png)
